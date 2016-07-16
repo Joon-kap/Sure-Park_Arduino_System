@@ -1,5 +1,11 @@
 #include <Servo.h> 
 
+#include <SPI.h>
+#include <WiFi.h>
+#include <WebSocketClient.h>
+
+#define PORTID  550               // IP socket port ID
+
 #define EntryGateServoPin 5
 #define ExitGateServoPin 6
 #define Open  90
@@ -34,6 +40,20 @@ long  Stall2SensorVal;
 long  Stall3SensorVal;
 long  Stall4SensorVal;    
 
+char ssid[] = "ASUS_Guest2";              // The network SSID for CMU unsecure network
+char c;                           // Character read from server
+int status = WL_IDLE_STATUS;      // Network connection status
+IPAddress ipserver(192,168,1,169);  // The server's IP address
+char chserver[] = "192.168.1.124";
+// WiFiClient client;                // The client (our) socket
+IPAddress ip;                     // The IP address of the shield
+IPAddress subnet;                 // The IP address of the shield
+long rssi;                        // Wifi shield signal strength
+byte mac[6];                      // Wifi shield MAC address
+WebSocketClient sokClient;
+char pword[] = "16swarchitect";
+String GateData;
+
 void setup() {
 pinMode(EntryBeamRcvr, INPUT);     // Make entry IR rcvr an input
 digitalWrite(EntryBeamRcvr, HIGH); // enable the built-in pullup
@@ -66,19 +86,83 @@ digitalWrite(ParkingStall3LED, HIGH);
 digitalWrite(ParkingStall4LED, HIGH);
 
 Serial.begin(9600);
-}
 
+//Serial.println("Attempting to connect to network...");
+//Serial.print("SSID: ");
+//Serial.println(ssid);
+while (status != WL_CONNECTED) 
+  {
+    Serial.print("Attempting to connect to SSID: ");
+    Serial.println(ssid);
+    status = sokClient.wifiBegin(ssid, pword);
+    if (sokClient.connect(ipserver, PORTID)!= true)
+    {
+      Serial.println( "Connection retry..." );
+      status = sokClient.wifiBegin(ssid, pword);
+      delay(delayvalue);
+    }
+    else
+    {
+      sokClient.setDataArrivedDelegate(dataArrived);
+      Serial.println( "\n----------------------------------------" );
+      printConnectionStatus();  // Print the basic connection and network information
+      Serial.println( "\n----------------------------------------\n" );
+    }
+  }
+}
 void loop() {
+  sokClient.monitor();
   GateOpen();
   GateClose();
   CheckSpot();
 }
 
+void dataArrived(WebSocketClient sokClient, String data)
+{
+  Serial.println("Data Arrived: " + data);
+  GateData = data;
+}
+
+void printConnectionStatus()
+{
+  // Print the basic connection and network information: Network, IP, and Subnet mask
+  ip = WiFi.localIP();
+  Serial.print("Connected to ");
+  Serial.print(ssid);
+  Serial.print(" IP Address:: ");
+  Serial.println(ip);
+  subnet = WiFi.subnetMask();
+  Serial.print("Netmask: ");
+  Serial.println(subnet);
+   
+  // Print our MAC address.
+  WiFi.macAddress(mac);
+  Serial.print("WiFi Shield MAC address: ");
+  Serial.print(mac[5],HEX);
+  Serial.print(":");
+  Serial.print(mac[4],HEX);
+  Serial.print(":");
+  Serial.print(mac[3],HEX);
+  Serial.print(":");
+  Serial.print(mac[2],HEX);
+  Serial.print(":");
+  Serial.print(mac[1],HEX);
+  Serial.print(":");
+  Serial.println(mac[0],HEX);
+   
+  // Print the wireless signal strength:
+  rssi = WiFi.RSSI();
+  Serial.print("Signal strength (RSSI): ");
+  Serial.print(rssi);
+  Serial.println(" dBm");
+  
+} // printConnectionStatus
+
 long GateOpen() {
   EntryBeamState = digitalRead(EntryBeamRcvr);
-  if (EntryBeamState == LOW)
+  if (EntryBeamState == LOW && GateData == "open")
   {
-    Serial.println( "Open Entry Gate" );   //Here we open the entry gate
+    //Serial.println( "Open Entry Gate" );   //Here we open the entry gate
     EntryGateServo.write(Open);
     analogWrite(EntryGateGreenLED, 0);
     analogWrite(EntryGateRedLED, 255);
@@ -88,7 +172,7 @@ long GateOpen() {
   ExitBeamState = digitalRead(ExitBeamRcvr);
   if (ExitBeamState == LOW)
   {
-    Serial.println( "Open Exit Gate" );   //Here we open the exit gate
+    //Serial.println( "Open Exit Gate" );   //Here we open the exit gate
     ExitGateServo.write(Open);
     analogWrite(ExitGateGreenLED, 0);
     analogWrite(ExitGateRedLED, 255);
@@ -100,17 +184,18 @@ long GateClose() {
   EntryBeamState = digitalRead(EntryBeamRcvr);
   if (EntryBeamState == HIGH)
   {
-    Serial.println( "Close Entry Gate" );   //Here we close the exit gate
+    //Serial.println( "Close Entry Gate" );   //Here we close the exit gate
     EntryGateServo.write(Close);
     analogWrite(EntryGateGreenLED, 255);
     analogWrite(EntryGateRedLED, 0);
+    GateData = "close";
     delay( delayvalue );
   }
 
   ExitBeamState = digitalRead(ExitBeamRcvr);
   if (ExitBeamState == HIGH)
   {
-    Serial.println( "Close Exit Gate" );   //Here we close the exit gate
+    //Serial.println( "Close Exit Gate" );   //Here we close the exit gate
     ExitGateServo.write(Close);
     analogWrite(ExitGateGreenLED, 255);
     analogWrite(ExitGateRedLED, 0);
@@ -136,58 +221,58 @@ long ProximityVal(int Pin)
 
 long CheckSpot() {
   Stall1SensorVal = ProximityVal(Stall1SensorPin); //Check parking space 1
-  Serial.print("  Stall 1 = ");
-  Serial.print(Stall1SensorVal);
+  //Serial.print("  Stall 1 = ");
+  //Serial.print(Stall1SensorVal);
   if (Stall1SensorVal < 50)
   {
-    Serial.println( "Turn off stall 1 LED" );
+    //Serial.println( "Turn off stall 1 LED" );
     digitalWrite(ParkingStall1LED, LOW);
   }
   else
   {
-    Serial.println( "Turn on stall 1 LED" );
+    //Serial.println( "Turn on stall 1 LED" );
     digitalWrite(ParkingStall1LED, HIGH);
   }
 
   Stall2SensorVal = ProximityVal(Stall2SensorPin); //Check parking space 2
-  Serial.print("  Stall 2 = ");
-  Serial.print(Stall2SensorVal);
+  //Serial.print("  Stall 2 = ");
+  //Serial.print(Stall2SensorVal);
   if (Stall2SensorVal < 50)
   {
-    Serial.println( "Turn off stall 2 LED" );
+    //Serial.println( "Turn off stall 2 LED" );
     digitalWrite(ParkingStall2LED, LOW);
   }
   else
   {
-    Serial.println( "Turn on stall 2 LED" );
+    //Serial.println( "Turn on stall 2 LED" );
     digitalWrite(ParkingStall2LED, HIGH);
   }
 
   Stall3SensorVal = ProximityVal(Stall3SensorPin); //Check parking space 3
-  Serial.print("  Stall 3 = ");
-  Serial.print(Stall3SensorVal);
+  //Serial.print("  Stall 3 = ");
+  //Serial.print(Stall3SensorVal);
   if (Stall3SensorVal < 50)
   {
-    Serial.println( "Turn off stall 3 LED" );
+    //Serial.println( "Turn off stall 3 LED" );
     digitalWrite(ParkingStall3LED, LOW);
   }
   else
   {
-    Serial.println( "Turn on stall 3 LED" );
+    //Serial.println( "Turn on stall 3 LED" );
     digitalWrite(ParkingStall3LED, HIGH);
   }
 
   Stall4SensorVal =  ProximityVal(Stall4SensorPin); //Check parking space 4
-  Serial.print("  Stall 4 = ");
-  Serial.println(Stall4SensorVal);
+  //Serial.print("  Stall 4 = ");
+  //Serial.println(Stall4SensorVal);
   if (Stall4SensorVal < 50)
   {
-    Serial.println( "Turn off stall 4 LED" );
+    //Serial.println( "Turn off stall 4 LED" );
     digitalWrite(ParkingStall4LED, LOW);
   }
   else
   {
-    Serial.println( "Turn on stall 4 LED" );
+    //Serial.println( "Turn on stall 4 LED" );
     digitalWrite(ParkingStall4LED, HIGH);
   }
 }
