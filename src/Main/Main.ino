@@ -11,6 +11,7 @@
 
 //#define PORTID  8080               // IP socket port ID
 #define PORTID  550               // IP socket port ID
+#define PORTID_MAX  560               // IP socket port ID
 
 #define EntryGateServoPin 5
 #define ExitGateServoPin 6
@@ -53,11 +54,9 @@ char ssid[] = "ASUS_Guest2";              // The network SSID for CMU unsecure n
 char c;                           // Character read from server
 //IPAddress ipserver(192, 168, 1, 197); // The server's IP address  //EUNSANG
 IPAddress ipserver(192, 168, 1, 6); // The server's IP address  //JUNGAP
+//IPAddress ipserver(192, 168, 1, 112); // The server's IP address  //DAEHAN
 
 
-//char serverName[] = "192.168.1.197";
-
-// WiFiClient client;                // The client (our) socket
 IPAddress ip;                     // The IP address of the shield
 IPAddress subnet;                 // The IP address of the shield
 long rssi;                        // Wifi shield signal strength
@@ -66,11 +65,62 @@ WebSocketClient sokClient;
 WiFiClient getClient;
 char pword[] = "16swarchitect";
 String GateData;
-
+int serverConnected = 0;
 
 #define MAX_SENSOR_NUMBER 6
 char SENSOR_STATE[MAX_SENSOR_NUMBER+1];
 char OLD_SENSOR_STATE[MAX_SENSOR_NUMBER+1];
+char SERVER_STATE[MAX_SENSOR_NUMBER+1];
+
+int TRY_PORT = PORTID;
+int WifiStatus = WL_IDLE_STATUS;      // Network connection status
+int TryConnectWifi() {
+  if((WiFi.status() != WL_CONNECTED)) {
+    Serial.print("Attempting to connect to SSID: ");
+    Serial.println(ssid);
+    WifiStatus = sokClient.wifiBegin(ssid, pword);
+  }
+
+  printConnectionStatus();  // Print the basic connection and network information
+}
+
+int TryServerConnect(){
+  int tryCnt = 0;
+  
+  while(true){
+    if((WifiStatus==WL_CONNECTED)&&(!sokClient.connected())) {
+      if ((sokClient.connect(ipserver, PORTID) != true))
+      {
+        Serial.println( "Connection retry..." );
+        //status = sokClient.wifiBegin(ssid, pword);
+      /*
+      TRY_PORT++;
+      if(TRY_PORT>PORTID_MAX) {
+        TRY_PORT=PORTID;
+      }
+      */
+        delay(delayvalue);
+        //WifiStatus = 0;
+      } 
+    
+    } else
+    {
+      sokClient.setDataArrivedDelegate(dataArrived);
+      Serial.println( "\n----------------------------------------" );
+      
+      Serial.println( "\n----------------------------------------\n" );
+      serverConnected = 1;
+      break;
+    }
+    tryCnt++;
+    if(tryCnt >3){
+      serverConnected = 0;
+      break;
+    }
+  }
+  
+  return WifiStatus;
+}
 
 void setup() {
   int status = WL_IDLE_STATUS;      // Network connection status
@@ -110,48 +160,107 @@ void setup() {
   //Serial.println("Attempting to connect to network...");
   //Serial.print("SSID: ");
   //Serial.println(ssid);
-  while (status != WL_CONNECTED)
-  {
-    Serial.print("Attempting to connect to SSID: ");
-    Serial.println(ssid);
-    status = sokClient.wifiBegin(ssid, pword);
-    if ((sokClient.connect(ipserver, PORTID) != true)&&(status<=0))
-    {
-      Serial.println( "Connection retry..." );
-      //status = sokClient.wifiBegin(ssid, pword);
-      delay(delayvalue);
-      continue;
-    }
-    else
-    {
-      sokClient.setDataArrivedDelegate(dataArrived);
-      Serial.println( "\n----------------------------------------" );
-      printConnectionStatus();  // Print the basic connection and network information
-      Serial.println( "\n----------------------------------------\n" );
-    }
-  }
+  TryConnectWifi();
+  TryServerConnect();
+ 
 
 }
-#define LOOP_DELAY (100)
+#define LOOP_DELAY (10)
 int loop_delay=0;
 void loop() {
-  loop_delay++;
-  if(loop_delay == LOOP_DELAY) {
-    loop_delay=0;
-    if(UpdateSensorState()) {
-      getPage(ipserver, "SENSORUPDATE", SENSOR_STATE);
+  if(serverConnected==1) {
+    loop_delay++;
+    //TryServerConnect();
+    if(loop_delay == LOOP_DELAY) {
+      loop_delay=0;
+  // Serial.println(__LINE__);   
+   
+      if(UpdateSensorState()) {
+  // Serial.println(__LINE__);   
+  
+  
+        getPage(ipserver, "SENSORUPDATE", SENSOR_STATE);
+   Serial.println(__LINE__);   
+  
+  
+        UpdateActuator();
+   Serial.println(__LINE__);   
+  
+      }
+      delay(10);
     }
-    UpdateActuator();
-    delay(10);
+    sokClient.monitor();
   }
-  sokClient.monitor();
 
 }
 
 void dataArrived(WebSocketClient sokClient, String data)
 {
-  Serial.println("Data Arrived: " + data);
+  Serial.println("1Data Arrived: " + data);
   GateData = data;
+  int strIndex;
+  strIndex=GateData.indexOf("SERVERREQ_OPEN_EXIT");
+  if(strIndex>=0) {
+    Serial.print("SERVERREQ_OPEN_EXIT>>");
+    if(SERVER_STATE[1]=='0') {
+      Serial.println("Exit OPEN");
+      ExitGateServo.write(Open);
+    }
+
+  }
+  strIndex=GateData.indexOf("SERVERREQ_OPEN_ENTRY");
+  if(strIndex>=0) {
+    Serial.print("SERVERREQ_OPEN_ENTRY>>");
+    if(SERVER_STATE[0]=='0') {
+      Serial.println("Entry OPEN");
+      EntryGateServo.write(Open);
+      
+      for(int i=2; i<MAX_SENSOR_NUMBER; i++) {
+        SERVER_STATE[i] = '0';      
+      }
+
+      int onchangeled=0;
+      onchangeled = (GateData.charAt(2)-'0');
+      onchangeled += (GateData.charAt(1)-'0') * 10;
+      onchangeled += (GateData.charAt(0)-'0') * 100;
+      if(onchangeled>MAX_SENSOR_NUMBER) {
+      Serial.println("ERROR onchangeled = "+onchangeled);
+      //return;
+      }
+      Serial.print("DONE");
+      Serial.println(onchangeled);
+
+      
+      SERVER_STATE[onchangeled+1] = '1';
+      UpdateActuator();
+    }
+  }
+  /*
+  strIndex=GateData.indexOf("SERVERREQ_CHANGESTATUS");
+  if(strIndex>=0) {
+    Serial.print("SERVERREQ_CHANGESTATUS>>");
+    for(int i=2; 2<MAX_SENSOR_NUMBER; i++) {
+      SERVER_STATE[i] = '0';      
+    }
+    int onchangeled=0;
+    onchangeled = GateData.charAt(strIndex+strlen("SERVERREQ_CHANGESTATUS")+2);
+    onchangeled = GateData.charAt(strIndex+strlen("SERVERREQ_CHANGESTATUS")+1) * 10;
+    onchangeled = GateData.charAt(strIndex+strlen("SERVERREQ_CHANGESTATUS")+0) * 100;
+    if(onchangeled>MAX_SENSOR_NUMBER) {
+      Serial.println("ERROR onchangeled = "+onchangeled);
+      return;
+    }
+       Serial.print("DONE\n");
+
+    SERVER_STATE[onchangeled] = '1';
+  }
+*/
+  strIndex=GateData.indexOf("SERVERREQ_RELEASESTATUS");
+  if(strIndex>=0) {
+    Serial.print("SERVERREQ_RELEASESTATUS>>");
+    UpdateSensorState();
+    UpdateActuator();
+  }
 }
 
 void printConnectionStatus()
@@ -199,51 +308,62 @@ byte getPage(IPAddress ipBuf, char page[], char sensorstat[])
   char strBuf[128];
   int status = 0;
   int timeout = 100;
+  int ret=0;
 #if 1  
   Serial.println("\nStarting connection to server...");
   // if you get a connection, report back via serial:
-  if (getClient.connect(ipserver, 8080)) {
+  if(getClient.connect(ipserver, 8080)) {
     Serial.println("connected to server");
     // Make a HTTP request:
     
-    snprintf(strBuf, 128, "GET /surepark_server/rev/test.do?%s=%s HTTP/1.1", page, sensorstat);
+//    snprintf(strBuf, 128, "GET /surepark_server/sensor/changeStatus.do?%s=%s HTTP/1.0", page, sensorstat);
+    snprintf(strBuf, 128, "POST /surepark_server/sensor/changeStatus.do?%s=%s HTTP/1.1", page, sensorstat);
+
     getClient.println(strBuf);
     Serial.println(strBuf);
-    //getClient.println("GET /surepark_server/rev/test.do?go=7 HTTP/1.1");
 
     getClient.println("Host: www.google.com");
     getClient.println("Connection: close");
     getClient.println();
     Serial.println("Respond:"); 
   
-    timeout = 3000;
+    timeout = 20;
     String data = "";
 
     while(timeout--) {
       while (getClient.available()) {
         char c = getClient.read();
         data+=c;
+        Serial.print(c);
         if((c=='\n')||(c=='}')) {
-          int strindex = data.indexOf("RETUPDATE");
-          if(strindex>0) {
-            //Serial.println(data+strindex);
-            Serial.println(data);
+          String RETUPDATE = "RETUPDATE";
+
+            int strindex = data.indexOf(RETUPDATE);
+            if(strindex>=0) {
+              for(int i=0; i<MAX_SENSOR_NUMBER; i++) {
+                SERVER_STATE[i] = data.charAt(strindex+3+i+RETUPDATE.length());
+              }
+              SERVER_STATE[MAX_SENSOR_NUMBER] = '\0';
+              Serial.print("SERVER_STATE = ");
+              Serial.println(SERVER_STATE);
+              timeout=0;
+              ret=1;
+              break;              
           }
           data = "";
+          timeout=0;
+          //break;
         }
         //Serial.print(c);
       }
-      delay(1);
+      delay(100);
+
+      Serial.println(getClient.available());
     }
-    
-          int strindex = data.indexOf("RETUPDATE");
-          if(strindex>0) {
-            //Serial.println(data+strindex);
-            Serial.println(data);
-          }
-   Serial.println("END!");
-   getClient.flush();
-   getClient.stop();
+
+      getClient.flush();
+      getClient.stop();
+    Serial.println("END!");
   }
   else
   {
@@ -252,6 +372,7 @@ byte getPage(IPAddress ipBuf, char page[], char sensorstat[])
     getClient.stop();
   }
 #endif
+  return ret;
 }
 
 
@@ -280,49 +401,57 @@ bool UpdateSensorState() {
   for(int i=0; i<MAX_SENSOR_NUMBER; i++) {
     OLD_SENSOR_STATE[i] = SENSOR_STATE[i];
   }
+  //Serial.print("OLD_SENSOR_STATE = ");
+  //Serial.println(OLD_SENSOR_STATE);
   return ret;
 }
 
 bool UpdateActuator() {
   bool ret = false;
-  if(SENSOR_STATE[0]=='0') {
+  //ENTRY GATE -----------------------------------
+  if(SERVER_STATE[0]=='0') {
  //   EntryGateServo.write(Open);
     analogWrite(EntryGateGreenLED, 0);
     analogWrite(EntryGateRedLED, LED_BRIGHTNESS);
-    delay( delayvalue );
+//    delay( delayvalue );
   } else {
     EntryGateServo.write(Close);
     analogWrite(EntryGateGreenLED, LED_BRIGHTNESS);
     analogWrite(EntryGateRedLED, 0);
-    delay( delayvalue );
+//    delay( delayvalue );
   }
-  if(SENSOR_STATE[1]=='0') {
+  //EXIT GATE -----------------------------------
+  if(SERVER_STATE[1]=='0') {
 //    ExitGateServo.write(Open);
     analogWrite(ExitGateGreenLED, 0);
     analogWrite(ExitGateRedLED, LED_BRIGHTNESS);
-    delay( delayvalue );
+//    delay( delayvalue );
   } else {
     ExitGateServo.write(Close);
     analogWrite(ExitGateGreenLED, LED_BRIGHTNESS);
     analogWrite(ExitGateRedLED, 0);
-    delay( delayvalue );
+//    delay( delayvalue );
   }
-  if(SENSOR_STATE[2]=='0') {
+  //LED1 -----------------------------------
+  if(SERVER_STATE[2]=='0') {
     digitalWrite(ParkingStall1LED, LOW);
   } else {
     digitalWrite(ParkingStall1LED, HIGH);
   }
-    if(SENSOR_STATE[3]=='0') {
+  //LED2 -----------------------------------
+  if(SERVER_STATE[3]=='0') {
     digitalWrite(ParkingStall2LED, LOW);
   } else {
     digitalWrite(ParkingStall2LED, HIGH);
   }
-    if(SENSOR_STATE[4]=='0') {
+  //LED3 -----------------------------------
+  if(SERVER_STATE[4]=='0') {
     digitalWrite(ParkingStall3LED, LOW);
   } else {
     digitalWrite(ParkingStall3LED, HIGH);
   }
-    if(SENSOR_STATE[5]=='0') {
+  //LED4 -----------------------------------
+  if(SERVER_STATE[5]=='0') {
     digitalWrite(ParkingStall4LED, LOW);
   } else {
     digitalWrite(ParkingStall4LED, HIGH);
