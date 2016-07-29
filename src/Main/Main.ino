@@ -8,7 +8,6 @@
 #include <WiFi.h>
 #include <Ethernet.h>
 #include <WebSocketClient.h>
-#include <AES.h>
 
 //#define PORTID  8080               // IP socket port ID
 #define PORTID  550               // IP socket port ID
@@ -53,8 +52,8 @@ long  Stall4SensorVal;
 
 char ssid[] = "ASUS_Guest2";              // The network SSID for CMU unsecure network
 char c;                           // Character read from server
-IPAddress ipserver(192, 168, 1, 197); // The server's IP address  //EUNSANG
-//IPAddress ipserver(192, 168, 1, 6); // The server's IP address  //JUNGAP
+//IPAddress ipserver(192, 168, 1, 197); // The server's IP address  //EUNSANG
+IPAddress ipserver(192, 168, 1, 6); // The server's IP address  //JUNGAP
 //IPAddress ipserver(192, 168, 1, 112); // The server's IP address  //DAEHAN
 
 
@@ -123,16 +122,6 @@ int TryServerConnect() {
 
   return WifiStatus;
 }
-AES aes ;
-#define KEYLENGTH 32
-char PassString[] = "This is hard to believe but true";
-byte key[KEYLENGTH];
-
-char Message[] = "Ncrypted Message";
-
-byte plain[N_BLOCK];
-byte cipher [N_BLOCK] ;
-byte decrypted [N_BLOCK] ;
 
 
 void setup() {
@@ -173,57 +162,6 @@ void setup() {
 
   openEntryFlag = false;
   Serial.begin(9600);
-
-  // Pass the key into the byte array
-  for (int i = 0; i < KEYLENGTH; i++) {
-    key[i] = PassString[i];
-  }
-  
-  if (aes.set_key (key, KEYLENGTH) !=0){
-    Serial.println(F("Failed to set key"));
-  }
-
-for (int i = 0; i < N_BLOCK; i++) {
-    plain[i] = Message[i];
-    cipher[i] = 0;
-    decrypted[i] = 0;
-    Serial.print((char)plain[i]);
-    Serial.print(F(" "));
-  }
-  Serial.println(F(""));
-  
-  // Show encrypted message
-  if (aes.encrypt(plain, cipher) == 0) {
-    Serial.println(F("encrypted: "));
-    for (int i = 0; i < N_BLOCK; i++) {
-      Serial.print(cipher[i]);
-      Serial.print(F(" "));
-    }
-    Serial.println(F(""));
-  } else {
-    Serial.println(F("Failed to encrypt"));
-  }
-  
-  // Show decrypted message
-  if (aes.decrypt(cipher, decrypted) == 0) {
-    Serial.println(F("decrypted binary: "));
-    for (int i = 0; i < N_BLOCK; i++) {
-      Serial.print(decrypted[i]);
-      Serial.print(F(" "));
-    }
-    Serial.println(F(""));
-    Serial.println(F("decrypted char: "));
-    for (int i = 0; i < N_BLOCK; i++) {
-      Serial.print(char(decrypted[i]));
-    }
-    Serial.println(F(""));
-    
-  } else {
-    Serial.println(F("Failed to decrypt"));
-  }
-  
-  
-  Serial.println(F("AES test complete"));
 
   //Serial.println("Attempting to connect to network...");
   //Serial.print("SSID: ");
